@@ -55,7 +55,132 @@ We need to make sure to add ```@EnableResourceServer``` annotation in the spring
 
 Above all changes added in the respective classes, we can run the spring boot application, this application run on 8081 and the context path will ```/auth```. We can use this url ```http://localhost:8081/auth/login``` to check, whether it is working or not.
 
-**Note:** I got on error while implementing the JWT token in the authroization server. ```Cannot convert access token to JSON``` this error we got because of I missed to ```@Bean``` in the ```accessTokenConverter``` method.
+**Note:** I got an error while implementing the JWT token in the authroization server. ```Cannot convert access token to JSON``` this error we got because of I missed to ```@Bean``` in the ```accessTokenConverter``` method.
+
+### Create the resource-service 
+We need to create the new spring boot application with ```security oauth2``` and ```security jwt``` dependencies. We need to add the below properties. 
+
+```properties
+logging.level.org.springframework=DEBUG
+
+server.port=8083
+server.servlet.context-path=/resources
+```
+
+This application is running on ```8083``` port and context path will be ```/resources```. 
+
+We need to create the spring boot ```ResourceServiceApplication```main class:
+```java
+package com.developerhelperhub.ms.id;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ResourceServiceApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(ResourceServiceApplication.class, args);
+	}
+
+}
+```
+
+We need to create new ```ResourceServerConfig``` class to configure the resource server configurations. In this resource configuration, we are adding the configuration explains below:
+
+* @Override the ```ResourceServerSecurityConfigurer``` configuration method to configure the JWT token service and other resource configurations.
+* @Override the ```HttpSecurity``` configuration to configure the endpoint which are the endpoints can be exposed.
+* We need to add same token store and access token converter in the authroization server. Please make sure the sign key must be same.
+* Need to create the token store service to configure the JWT token store. This token service, we are using to configure in the resource configuration.
+
+
+```java
+package com.developerhelperhub.ms.id.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.config.annotation.web.configuration.EnableResourceServer;
+import org.springframework.security.oauth2.config.annotation.web.configuration.ResourceServerConfigurerAdapter;
+import org.springframework.security.oauth2.config.annotation.web.configurers.ResourceServerSecurityConfigurer;
+import org.springframework.security.oauth2.provider.error.OAuth2AccessDeniedHandler;
+import org.springframework.security.oauth2.provider.token.DefaultTokenServices;
+import org.springframework.security.oauth2.provider.token.TokenStore;
+import org.springframework.security.oauth2.provider.token.store.JwtAccessTokenConverter;
+import org.springframework.security.oauth2.provider.token.store.JwtTokenStore;
+
+@Configuration
+@EnableResourceServer
+public class ResourceServerConfig extends ResourceServerConfigurerAdapter {
+
+	private static final String RESOURCE_ID = "resource_id";
+
+	@Override
+	public void configure(ResourceServerSecurityConfigurer resources) throws Exception {
+		resources.resourceId(RESOURCE_ID).stateless(false).tokenServices(tokenServices());
+	}
+
+	@Override
+	public void configure(HttpSecurity http) throws Exception {
+		http.anonymous().disable().authorizeRequests().antMatchers("/users/**").access("hasRole('ADMIN')").and()
+				.exceptionHandling().accessDeniedHandler(new OAuth2AccessDeniedHandler());
+	}
+
+	@Bean
+	public DefaultTokenServices tokenServices() {
+		DefaultTokenServices tokenServices = new DefaultTokenServices();
+		tokenServices.setTokenStore(tokenStore());
+		return tokenServices;
+	}
+
+	@Bean
+	public JwtAccessTokenConverter accessTokenConverter() {
+		JwtAccessTokenConverter converter = new JwtAccessTokenConverter();
+		converter.setSigningKey("123456");
+		return converter;
+	}
+
+	@Bean
+	public TokenStore tokenStore() {
+		return new JwtTokenStore(accessTokenConverter());
+	}
+
+}
+
+```
+
+We need to create ```UserController``` class to add the resource endpoints in the resource service.
+
+```java
+package com.developerhelperhub.ms.id.controller;
+
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class UserController {
+
+	@RequestMapping(value = "/user", method = RequestMethod.GET)
+	public String listUser() {
+		return "success";
+	}
+
+	@RequestMapping(value = "/user", method = RequestMethod.POST)
+	public String create() {
+		return "success";
+	}
+
+	@RequestMapping(value = "/user/{id}", method = RequestMethod.DELETE)
+	public String delete(@PathVariable(value = "id") Long id) {
+		return "success";
+	}
+}
+```
+
+Above all classes creation of resource server, we can run the spring boot application, this application run on 8083. We can use this url ```http://localhost:8083/resources/user``` to check, whether it is accessing or not. Now, the API return the 401 unauthorized error. We need to generate the token from authroization server first and then we need to use that access token to access the this API.
+
 
 ### To generate the tokens with grant type "password"
 
@@ -70,41 +195,33 @@ Here, I am using Postman to test the grant types. Please open the Postman and op
   - password is mycloud@1234
 * Click the "Send" button.
 
-The API give the response contains
+The below respone we can see the access and refresh token are generated by the authroization server through the JWT token service. 
 ```json
 {
-    "access_token": "590adfd7-3503-446a-ac0c-3c65341aaf12",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1ODUyMDE3MTIsInVzZXJfbmFtZSI6Im15Y2xvdWQiLCJhdXRob3JpdGllcyI6WyJST0xFX1VTRVIiXSwianRpIjoiZWU3NGRmZDUtYjE3Mi00ZTdmLWJhMjUtNWQ1Yzc3NDFhNDU0IiwiY2xpZW50X2lkIjoibXktY2xvdWQtaWRlbnRpdHkiLCJzY29wZSI6WyJ1c2VyX2luZm8iXX0.f8L_jXAGTw-l0wqWSEkSrO9tnJmtDB_9C0ZQffzn1HU",
     "token_type": "bearer",
-    "refresh_token": "a0cae88d-eac7-4688-b09d-8c05b61ffe96",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX25hbWUiOiJteWNsb3VkIiwic2NvcGUiOlsidXNlcl9pbmZvIl0sImF0aSI6ImVlNzRkZmQ1LWIxNzItNGU3Zi1iYTI1LTVkNWM3NzQxYTQ1NCIsImV4cCI6MTU4NTI0MTcxMiwiYXV0aG9yaXRpZXMiOlsiUk9MRV9VU0VSIl0sImp0aSI6IjhmNjA5NTE1LWFmOTItNGEzMS1iNDYyLTQ0ZjE2OGI2ZTYxYiIsImNsaWVudF9pZCI6Im15LWNsb3VkLWlkZW50aXR5In0.l4dvchYz6Od5pxx3McSze2MU6y5o2OO6BvbO6aX1bEE",
     "expires_in": 43198,
-    "scope": "user_info"
+    "scope": "user_info",
+    "jti": "ee74dfd5-b172-4e7f-ba25-5d5c7741a454"
 }
 ```
 
-### To generate the tokens with grant type "refresh_token"
+### To authorize the ```http://localhost:8083/resources/user``` API
 
 Open a new tab. We have to add below configuration and data in the tab.
-* Method: POST
+* Method: GET
 * URL: http://localhost:8081/auth/oauth/token
-* Select the "Autherization" tab and change the type to "Basic Auth". Enter the username and password of client id and client secrete. Click the "Update Request" button
-* Select the "Body" tab and select "x-www-form-urlencoded" option
-* Add the keys and values in the form
-  - grant_type is refresh_token
-  - refresh_token is ```a0cae88d-eac7-4688-b09d-8c05b61ffe96```
+* In the "Header" tab we need to added two keys and values
+ - One is "Autherization" header. Its values we have to provide access token with "bearer" key word like ```bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1ODUyMDE3MTIsInVzZXJfbmFtZSI6Im15Y2xvdWQiLCJhdXRob3JpdGllcyI6WyJST0xFX1VTRVIiXSwianRpIjoiZWU3NGRmZDUtYjE3Mi00ZTdmLWJhMjUtNWQ1Yzc3NDFhNDU0IiwiY2xpZW50X2lkIjoibXktY2xvdWQtaWRlbnRpdHkiLCJzY29wZSI6WyJ1c2VyX2luZm8iXX0.f8L_jXAGTw-l0wqWSEkSrO9tnJmtDB_9C0ZQffzn1HU```
+* Another one is "Content-Type" and its value is "application/json"
 * Click the "Send" button.
  
 The API give the response contains
 ```json
-{
-    "access_token": "162544f0-5dd5-4500-abe7-58c4be74bfab",
-    "token_type": "bearer",
-    "refresh_token": "c6c647d1-4985-4474-8374-e0f0b1bccf90",
-    "expires_in": 43198,
-    "scope": "user_info"
-}
+success
 ```
 
 ### Reference
-* [developer.okta.com](https://developer.okta.com/blog/2019/03/12/oauth2-spring-security-guide)
-* [Oauth2 Autherization Server and Client Application](https://github.com/developerhelperhub/spring-boot2-oauth2-server-and-client)
-* [Fix for "unsupported grant type"](https://stackoverflow.com/questions/52194081/spring-boot-oauth-unsupported-grant-type)
+* [Authorization and Resource Server](https://www.devglan.com/spring-security/spring-boot-oauth2-jwt-example)
+* [Oauth2 Autherization Server and Client Application](https://github.com/developerhelperhub/spring-boot2-oauth2-server-grant-password-refresh-token)
